@@ -1,0 +1,10 @@
+{
+    "manifest_version": 3,
+    "name": "Download Page HTML",
+    "version": "1.0",
+    "description": "Download the full HTML of the current page.",
+    "permissions": ["activeTab", "downloads", "scripting"],
+    "background": { "service_worker": "background.js" },
+    "action": { "default_title": "Download HTML", "default_popup": "popup.html" }
+  }
+  

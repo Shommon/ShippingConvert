@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {
+      width: 300px;
+      padding: 15px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      margin: 0;
+    }
+    
+    .container {
+      text-align: center;
+    }
+    
+    h1 {
+      margin: 0 0 15px 0;
+      font-size: 20px;
+      font-weight: 600;
+    }
+    
+    .description {
+      margin-bottom: 20px;
+      font-size: 14px;
+      opacity: 0.9;
+      line-height: 1.4;
+    }
+    
+    .controls {
+      margin-bottom: 15px;
+    }
+    
+    .input-group {
+      margin-bottom: 10px;
+      text-align: left;
+    }
+    
+    label {
+      display: block;
+      font-size: 12px;
+      margin-bottom: 5px;
+      opacity: 0.9;
+    }
+    
+    input {
+      width: 100%;
+      padding: 8px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.1);
+      color: white;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+    
+    input::placeholder {
+      color: rgba(255, 255, 255, 0.6);
+    }
+    
+    button {
+      background: rgba(255, 255, 255, 0.2);
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      color: white;
+      padding: 12px 24px;
+      font-size: 16px;
+      font-weight: 600;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      backdrop-filter: blur(10px);
+      width: 100%;
+    }
+    
+    button:hover {
+      background: rgba(255, 255, 255, 0.3);
+      border-color: rgba(255, 255, 255, 0.5);
+      transform: translateY(-2px);
+    }
+    
+    button:active {
+      transform: translateY(0);
+    }
+    
+    .status {
+      margin-top: 15px;
+      font-size: 13px;
+      min-height: 20px;
+      opacity: 0.8;
+    }
+    
+    .success {
+      color: #4ade80;
+    }
+    
+    .error {
+      color: #f87171;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔧 HTML Modifier</h1>
+    <div class="description">
+      Modify table width and open in new tab (handles auto-print popups)
+    </div>
+    
+    <div class="controls">
+      <div class="input-group">
+        <label for="oldWidth">Current Width:</label>
+        <input type="text" id="oldWidth" value="784px" placeholder="e.g., 784px">
+      </div>
+      
+      <div class="input-group">
+        <label for="newWidth">New Width:</label>
+        <input type="text" id="newWidth" value="384px" placeholder="e.g., 384px">
+      </div>
+    </div>
+    
+    <button id="modifyBtn">Modify Table & Open</button>
+    <div id="status" class="status"></div>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>

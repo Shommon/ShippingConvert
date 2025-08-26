@@ -1,0 +1,20 @@
+{
+    "manifest_version": 3,
+    "name": "HTML Copier",
+    "version": "1.0",
+    "description": "Copy the full HTML source code of any webpage",
+    "permissions": [
+      "activeTab",
+      "scripting"
+    ],
+    "action": {
+      "default_popup": "popup.html",
+      "default_title": "Copy HTML"
+    },
+    "content_scripts": [
+      {
+        "matches": ["<all_urls>"],
+        "js": ["content.js"]
+      }
+    ]
+  }
