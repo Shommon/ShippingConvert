@@ -54,23 +54,7 @@ document.addEventListener('DOMContentLoaded', function() {
 // Function that will be injected into the page
 function modifyTableAndOpen(oldWidth, newWidth) {
   try {
-    // First, try to close any print dialogs
-    try {
-      if (window.print) {
-        // Override print function temporarily to prevent automatic printing
-        const originalPrint = window.print;
-        window.print = function() {
-          console.log('Print dialog blocked during HTML modification');
-        };
-        
-        // Restore after a delay
-        setTimeout(() => {
-          window.print = originalPrint;
-        }, 2000);
-      }
-    } catch (e) {
-      console.log('Could not override print function:', e);
-    }
+    // Work silently in the background - don't interfere with print dialog
     
     // Get the complete HTML including DOCTYPE
     const doctype = document.doctype ? 
@@ -83,7 +67,7 @@ function modifyTableAndOpen(oldWidth, newWidth) {
     const htmlElement = document.documentElement.outerHTML;
     let fullHTML = doctype + '\n' + htmlElement;
     
-    // Remove any auto-print scripts from the HTML
+    // Remove auto-print scripts ONLY from the modified HTML (not the current page)
     fullHTML = fullHTML.replace(/window\.print\s*\(\s*\)/gi, '// window.print() removed');
     fullHTML = fullHTML.replace(/print\s*\(\s*\)/gi, '// print() removed');
     fullHTML = fullHTML.replace(/<script[^>]*>[\s\S]*?window\.print[\s\S]*?<\/script>/gi, '<!-- Auto-print script removed -->');
@@ -122,58 +106,34 @@ function modifyTableAndOpen(oldWidth, newWidth) {
     // Store modified HTML in global variable for reference
     window.modifiedHTML = fullHTML;
     
-    // Create the new tab with modified HTML using a more robust method
-    const openModifiedPage = () => {
+    // Open new tab silently in the background
+    // Use setTimeout to ensure it doesn't interfere with print dialog focus
+    setTimeout(() => {
       try {
-        // Method 1: Try using blob URL
+        // Create blob URL
         const blob = new Blob([fullHTML], { type: 'text/html' });
         const url = URL.createObjectURL(blob);
+        
+        // Open in new tab without stealing focus from print dialog
         const newWindow = window.open(url, '_blank', 'noopener,noreferrer');
         
-        if (!newWindow || newWindow.closed) {
-          throw new Error('Popup blocked or failed');
-        }
-        
-        // Clean up the blob URL after a delay
-        setTimeout(() => URL.revokeObjectURL(url), 10000);
-        
-        return true;
-      } catch (e) {
-        console.log('Blob method failed, trying data URL:', e);
-        
-        // Method 2: Try using data URL (fallback)
-        try {
+        if (newWindow) {
+          // Clean up the blob URL after it's loaded
+          setTimeout(() => URL.revokeObjectURL(url), 5000);
+        } else {
+          // Fallback: try data URL method
           const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(fullHTML);
-          const newWindow = window.open(dataUrl, '_blank', 'noopener,noreferrer');
-          
-          if (!newWindow || newWindow.closed) {
-            throw new Error('Data URL method also failed');
-          }
-          
-          return true;
-        } catch (e2) {
-          console.error('Both methods failed:', e2);
-          return false;
+          window.open(dataUrl, '_blank', 'noopener,noreferrer');
         }
+      } catch (e) {
+        console.error('Error opening new tab:', e);
       }
-    };
+    }, 100); // Small delay to avoid interfering with print dialog
     
-    // Try to open immediately, if that fails, try after a delay
-    let opened = openModifiedPage();
-    
-    if (!opened) {
-      setTimeout(() => {
-        opened = openModifiedPage();
-        if (!opened) {
-          console.error('Failed to open new tab - popup blocker may be active');
-        }
-      }, 1000);
-    }
-    
-    // Log to console
+    // Log quietly to console (won't interfere with print dialog)
     console.log('📄 Modified HTML stored in window.modifiedHTML');
     console.log(`🔧 Table width changed from ${oldWidth} to ${newWidth}`);
-    console.log('🚫 Auto-print scripts removed from modified HTML');
+    console.log('🖨️ Print dialog left undisturbed');
     
     return { success: true };
   } catch (error) {
