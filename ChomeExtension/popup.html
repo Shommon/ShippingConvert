@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <style>
     body {
-      width: 300px;
+      width: 320px;
       padding: 15px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -33,9 +33,19 @@
       margin-bottom: 15px;
     }
     
-    .input-group {
+    .input-row {
+      display: flex;
+      gap: 10px;
       margin-bottom: 10px;
+    }
+    
+    .input-group {
+      flex: 1;
       text-align: left;
+    }
+    
+    .input-group.full-width {
+      width: 100%;
     }
     
     label {
@@ -58,6 +68,27 @@
     
     input::placeholder {
       color: rgba(255, 255, 255, 0.6);
+    }
+    
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      margin-bottom: 15px;
+      padding: 10px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+    }
+    
+    input[type="checkbox"] {
+      width: auto;
+      margin-right: 8px;
+      transform: scale(1.2);
+    }
+    
+    .checkbox-label {
+      font-size: 13px;
+      opacity: 0.9;
+      cursor: pointer;
     }
     
     button {
@@ -98,24 +129,57 @@
     .error {
       color: #f87171;
     }
+    
+    .height-inputs {
+      opacity: 0.5;
+      transition: opacity 0.3s ease;
+    }
+    
+    .height-inputs.enabled {
+      opacity: 1;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>🔧 HTML Modifier</h1>
     <div class="description">
-      Modify table width and open in new tab (works with print dialog open)
+      Modify table dimensions and open in new tab (works with print dialog open)
     </div>
     
     <div class="controls">
-      <div class="input-group">
-        <label for="oldWidth">Current Width:</label>
-        <input type="text" id="oldWidth" value="784px" placeholder="e.g., 784px">
+      <!-- Width Controls -->
+      <div class="input-row">
+        <div class="input-group">
+          <label for="oldWidth">Current Width:</label>
+          <input type="text" id="oldWidth" value="784px" placeholder="e.g., 784px">
+        </div>
+        
+        <div class="input-group">
+          <label for="newWidth">New Width:</label>
+          <input type="text" id="newWidth" value="584px" placeholder="e.g., 584px">
+        </div>
       </div>
       
-      <div class="input-group">
-        <label for="newWidth">New Width:</label>
-        <input type="text" id="newWidth" value="384px" placeholder="e.g., 384px">
+      <!-- Height Controls Toggle -->
+      <div class="checkbox-group">
+        <input type="checkbox" id="enableHeight">
+        <label for="enableHeight" class="checkbox-label">Also modify table height</label>
+      </div>
+      
+      <!-- Height Controls -->
+      <div class="height-inputs" id="heightInputs">
+        <div class="input-row">
+          <div class="input-group">
+            <label for="oldHeight">Current Height:</label>
+            <input type="text" id="oldHeight" value="555px" placeholder="e.g., 555px" disabled>
+          </div>
+          
+          <div class="input-group">
+            <label for="newHeight">New Height:</label>
+            <input type="text" id="newHeight" value="700px" placeholder="e.g., 700px" disabled>
+          </div>
+        </div>
       </div>
     </div>
     

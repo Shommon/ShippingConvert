@@ -3,14 +3,33 @@ document.addEventListener('DOMContentLoaded', function() {
   const status = document.getElementById('status');
   const oldWidthInput = document.getElementById('oldWidth');
   const newWidthInput = document.getElementById('newWidth');
+  const oldHeightInput = document.getElementById('oldHeight');
+  const newHeightInput = document.getElementById('newHeight');
+  const enableHeightCheckbox = document.getElementById('enableHeight');
+  const heightInputs = document.getElementById('heightInputs');
+
+  // Handle height controls toggle
+  enableHeightCheckbox.addEventListener('change', function() {
+    const isEnabled = this.checked;
+    heightInputs.classList.toggle('enabled', isEnabled);
+    oldHeightInput.disabled = !isEnabled;
+    newHeightInput.disabled = !isEnabled;
+  });
 
   modifyBtn.addEventListener('click', async function() {
     try {
       const oldWidth = oldWidthInput.value.trim();
       const newWidth = newWidthInput.value.trim();
+      const enableHeight = enableHeightCheckbox.checked;
+      const oldHeight = enableHeight ? oldHeightInput.value.trim() : null;
+      const newHeight = enableHeight ? newHeightInput.value.trim() : null;
       
       if (!oldWidth || !newWidth) {
         throw new Error('Please enter both old and new width values');
+      }
+      
+      if (enableHeight && (!oldHeight || !newHeight)) {
+        throw new Error('Please enter both old and new height values when height modification is enabled');
       }
 
       // Get the active tab
@@ -20,13 +39,19 @@ document.addEventListener('DOMContentLoaded', function() {
       const results = await chrome.scripting.executeScript({
         target: { tabId: tab.id },
         function: modifyTableAndOpen,
-        args: [oldWidth, newWidth]
+        args: [oldWidth, newWidth, oldHeight, newHeight, enableHeight]
       });
 
       const result = results[0].result;
       
       if (result.success) {
-        status.innerHTML = `✅ Table modified! Width changed from ${oldWidth} to ${newWidth}<br>Opening in new tab...`;
+        let message = `✅ Table modified! Width changed from ${oldWidth} to ${newWidth}`;
+        if (enableHeight) {
+          message += `<br>Height changed from ${oldHeight} to ${newHeight}`;
+        }
+        message += '<br>Opening in new tab...';
+        
+        status.innerHTML = message;
         status.className = 'status success';
         
         // Clear status after 4 seconds
@@ -52,7 +77,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // Function that will be injected into the page
-function modifyTableAndOpen(oldWidth, newWidth) {
+function modifyTableAndOpen(oldWidth, newWidth, oldHeight, newHeight, enableHeight) {
   try {
     // Work silently in the background - don't interfere with print dialog
     
@@ -72,35 +97,110 @@ function modifyTableAndOpen(oldWidth, newWidth) {
     fullHTML = fullHTML.replace(/print\s*\(\s*\)/gi, '// print() removed');
     fullHTML = fullHTML.replace(/<script[^>]*>[\s\S]*?window\.print[\s\S]*?<\/script>/gi, '<!-- Auto-print script removed -->');
     
-    // Find and modify the specific table
-    const tableRegex = /<table[^>]*cellpadding="0"[^>]*cellspacing="0"[^>]*border="1"[^>]*style="[^"]*width:\s*784px[^"]*"[^>]*>/gi;
-    
     let tableFound = false;
-    fullHTML = fullHTML.replace(tableRegex, function(match) {
-      tableFound = true;
-      return match.replace(/width:\s*784px/gi, `width: ${newWidth}`);
-    });
+    let heightModified = false;
     
-    // If the regex approach didn't work, try a more general approach
-    if (!tableFound) {
-      const generalTableRegex = /<table([^>]*style="[^"]*width:\s*784px[^"]*"[^>]*>)/gi;
-      fullHTML = fullHTML.replace(generalTableRegex, function(match, group1) {
-        tableFound = true;
-        return match.replace(/width:\s*784px/gi, `width: ${newWidth}`);
+    // Function to modify table dimensions in a string
+    function modifyTableDimensions(htmlString) {
+      // Find and modify the specific table with multiple approaches
+      
+      // Approach 1: Find table with specific attributes
+      const tableRegex = /<table[^>]*cellpadding="0"[^>]*cellspacing="0"[^>]*border="1"[^>]*style="[^"]*"[^>]*>/gi;
+      
+      htmlString = htmlString.replace(tableRegex, function(match) {
+        let modifiedMatch = match;
+        let foundWidth = false;
+        let foundHeight = false;
+        
+        // Modify width
+        if (modifiedMatch.includes(`width: ${oldWidth}`) || modifiedMatch.includes(`width:${oldWidth}`)) {
+          modifiedMatch = modifiedMatch.replace(new RegExp(`width:\\s*${oldWidth.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'gi'), `width: ${newWidth}`);
+          foundWidth = true;
+        }
+        
+        // Modify height if enabled
+        if (enableHeight) {
+          if (modifiedMatch.includes(`height: ${oldHeight}`) || modifiedMatch.includes(`height:${oldHeight}`)) {
+            modifiedMatch = modifiedMatch.replace(new RegExp(`height:\\s*${oldHeight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'gi'), `height: ${newHeight}`);
+            foundHeight = true;
+          } else {
+            // If height not found, add it to the style
+            const styleMatch = modifiedMatch.match(/style="([^"]*)"/i);
+            if (styleMatch && foundWidth) {
+              const newStyle = styleMatch[1] + `; height: ${newHeight}`;
+              modifiedMatch = modifiedMatch.replace(styleMatch[0], `style="${newStyle}"`);
+              foundHeight = true;
+            }
+          }
+        }
+        
+        if (foundWidth) {
+          tableFound = true;
+        }
+        if (enableHeight && foundHeight) {
+          heightModified = true;
+        }
+        
+        return modifiedMatch;
       });
-    }
-    
-    // If still not found, try replacing any occurrence of width: 784px
-    if (!tableFound) {
-      const widthRegex = /width:\s*784px/gi;
-      if (fullHTML.match(widthRegex)) {
-        fullHTML = fullHTML.replace(widthRegex, `width: ${newWidth}`);
-        tableFound = true;
+      
+      // Approach 2: More general width replacement if not found
+      if (!tableFound) {
+        const widthRegex = new RegExp(`width:\\s*${oldWidth.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'gi');
+        if (htmlString.match(widthRegex)) {
+          htmlString = htmlString.replace(widthRegex, `width: ${newWidth}`);
+          tableFound = true;
+        }
       }
+      
+      // Approach 3: Height replacement if enabled and not found
+      if (enableHeight && !heightModified) {
+        const heightRegex = new RegExp(`height:\\s*${oldHeight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'gi');
+        if (htmlString.match(heightRegex)) {
+          htmlString = htmlString.replace(heightRegex, `height: ${newHeight}`);
+          heightModified = true;
+        }
+      }
+      
+      return htmlString;
+    }
+    
+    // Apply the modifications
+    fullHTML = modifyTableDimensions(fullHTML);
+    
+    // Add CSS improvements for better height control
+    if (enableHeight && heightModified) {
+      const cssImprovements = `
+        <style>
+        /* Table height control improvements */
+        table[style*="height"] {
+          table-layout: fixed !important;
+        }
+        table[style*="height"] td {
+          vertical-align: top !important;
+          overflow: hidden;
+        }
+        /* Distribute row heights proportionally */
+        table[style*="height"] tr:nth-child(1) { height: 8% !important; }
+        table[style*="height"] tr:nth-child(2) { height: 12% !important; }
+        table[style*="height"] tr:nth-child(3) { height: 12% !important; }
+        table[style*="height"] tr:nth-child(4) { height: 10% !important; }
+        table[style*="height"] tr:nth-child(5) { height: 40% !important; }
+        table[style*="height"] tr:nth-child(6) { height: 8% !important; }
+        table[style*="height"] tr:nth-child(7) { height: 10% !important; }
+        </style>
+      `;
+      
+      // Insert before closing </head> tag
+      fullHTML = fullHTML.replace('</head>', cssImprovements + '</head>');
     }
     
     if (!tableFound) {
-      return { success: false, error: 'Table with width 784px not found' };
+      return { success: false, error: `Table with width ${oldWidth} not found` };
+    }
+    
+    if (enableHeight && !heightModified) {
+      console.warn(`Height ${oldHeight} not found, but width was modified successfully`);
     }
     
     // Store modified HTML in global variable for reference
@@ -133,9 +233,16 @@ function modifyTableAndOpen(oldWidth, newWidth) {
     // Log quietly to console (won't interfere with print dialog)
     console.log('📄 Modified HTML stored in window.modifiedHTML');
     console.log(`🔧 Table width changed from ${oldWidth} to ${newWidth}`);
+    if (enableHeight) {
+      console.log(`📏 Table height ${heightModified ? 'changed' : 'attempted to change'} from ${oldHeight} to ${newHeight}`);
+    }
     console.log('🖨️ Print dialog left undisturbed');
     
-    return { success: true };
+    return { 
+      success: true, 
+      widthModified: tableFound,
+      heightModified: enableHeight ? heightModified : null
+    };
   } catch (error) {
     console.error('Error modifying HTML:', error);
     return { success: false, error: error.message };
