@@ -48,19 +48,45 @@ document.addEventListener('DOMContentLoaded', function() {
         const storedResults = await chrome.scripting.executeScript({
           target: { tabId: tab.id },
           function: () => {
+            console.log('Checking stored variables...');
+            console.log('window.pageHTML exists:', !!window.pageHTML);
+            console.log('window.originalHTML exists:', !!window.originalHTML);
+            console.log('window.storedHTML exists:', !!window.storedHTML);
+            
             if (window.pageHTML) {
-              return { success: true, html: window.pageHTML, method: 'stored' };
+              console.log('Using window.pageHTML, length:', window.pageHTML.length);
+              return { success: true, html: window.pageHTML, method: 'stored-pageHTML' };
             }
-            if (window.modifiedHTML) {
-              return { success: true, html: window.modifiedHTML, method: 'previous' };
+            if (window.originalHTML) {
+              console.log('Using window.originalHTML, length:', window.originalHTML.length);
+              return { success: true, html: window.originalHTML, method: 'stored-originalHTML' };
             }
-            return { success: false };
+            if (window.storedHTML) {
+              console.log('Using window.storedHTML, length:', window.storedHTML.length);
+              return { success: true, html: window.storedHTML, method: 'stored-storedHTML' };
+            }
+            
+            // Try session storage
+            try {
+              const sessionHTML = sessionStorage.getItem('extensionHTML');
+              if (sessionHTML) {
+                console.log('Using sessionStorage HTML, length:', sessionHTML.length);
+                return { success: true, html: sessionHTML, method: 'sessionStorage' };
+              }
+            } catch (e) {
+              console.log('Session storage check failed:', e);
+            }
+            
+            return { success: false, message: 'No stored HTML found' };
           }
         });
 
         if (storedResults[0].result.success) {
           htmlContent = storedResults[0].result.html;
           extractionMethod = storedResults[0].result.method;
+          console.log('HTML extracted via:', extractionMethod);
+        } else {
+          console.log('Stored HTML failed:', storedResults[0].result.message);
         }
       } catch (e) {
         console.log('Stored HTML method failed:', e);
@@ -74,6 +100,7 @@ document.addEventListener('DOMContentLoaded', function() {
             target: { tabId: tab.id },
             function: () => {
               try {
+                console.log('Attempting direct HTML extraction...');
                 const doctype = document.doctype ? 
                   '<!DOCTYPE ' + document.doctype.name +
                   (document.doctype.publicId ? ' PUBLIC "' + document.doctype.publicId + '"' : '') +
@@ -83,8 +110,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 const htmlElement = document.documentElement.outerHTML;
                 const fullHTML = doctype + '\n' + htmlElement;
                 
+                console.log('Direct extraction successful, HTML length:', fullHTML.length);
                 return { success: true, html: fullHTML, method: 'direct' };
               } catch (error) {
+                console.error('Direct extraction error:', error);
                 return { success: false, error: error.message };
               }
             }
@@ -93,18 +122,34 @@ document.addEventListener('DOMContentLoaded', function() {
           if (directResults[0].result.success) {
             htmlContent = directResults[0].result.html;
             extractionMethod = directResults[0].result.method;
+            console.log('HTML extracted via direct method');
+          } else {
+            console.log('Direct extraction failed:', directResults[0].result.error);
           }
         } catch (e) {
-          console.log('Direct extraction failed:', e);
+          console.log('Direct extraction method failed:', e);
         }
       }
 
-      // Method 3: Fallback - use chrome.tabs to get the page content
       if (!htmlContent) {
-        throw new Error('Could not extract HTML from page. Try pressing Ctrl+Shift+H on the page first to store HTML, then try again.');
+        throw new Error('Could not extract HTML from page. Please try:\n1. Press Ctrl+Shift+H on the page to store HTML\n2. Refresh the page and try again\n3. Make sure the page is fully loaded');
       }
 
       status.innerHTML = `🔄 Modifying HTML (${extractionMethod})...`;
+      console.log('Starting HTML modification...');
+      
+      // Debug: Check what we're looking for in the HTML
+      const hasTargetWidth = htmlContent.includes(oldWidth);
+      console.log(`HTML contains "${oldWidth}":`, hasTargetWidth);
+      
+      if (!hasTargetWidth) {
+        // Try to find what widths are actually in the HTML
+        const widthMatches = htmlContent.match(/width:\s*\d+px/gi) || [];
+        const uniqueWidths = [...new Set(widthMatches)];
+        console.log('Found widths in HTML:', uniqueWidths);
+        
+        throw new Error(`Target width "${oldWidth}" not found in HTML.\nFound these widths instead: ${uniqueWidths.join(', ')}\n\nTip: Inspect the table element to find the exact width value.`);
+      }
       
       // Now modify the HTML
       const modifiedResult = modifyHTMLOffline(htmlContent, oldWidth, newWidth, oldHeight, newHeight, enableHeight);
@@ -135,20 +180,22 @@ document.addEventListener('DOMContentLoaded', function() {
       
     } catch (error) {
       console.error('Error:', error);
-      status.innerHTML = `❌ Error: ${error.message}<br><br>💡 <strong>Try this:</strong><br>1. Press Ctrl+Shift+H on the page<br>2. Then use this extension`;
+      status.innerHTML = `❌ Error: ${error.message.replace(/\n/g, '<br>')}`;
       status.className = 'status error';
       
-      // Clear status after 8 seconds
+      // Clear status after 10 seconds for longer error messages
       setTimeout(() => {
         status.textContent = '';
         status.className = 'status';
-      }, 8000);
+      }, 10000);
     }
   });
 
   // Function to open HTML in new tab
   async function openHTMLInNewTab(htmlContent) {
     try {
+      console.log('Opening HTML in new tab, content length:', htmlContent.length);
+      
       // Create a blob URL (better than data URL for large content)
       const blob = new Blob([htmlContent], { type: 'text/html' });
       const blobUrl = URL.createObjectURL(blob);
@@ -159,161 +206,183 @@ document.addEventListener('DOMContentLoaded', function() {
         active: true
       });
       
+      console.log('New tab created:', newTab.id);
+      
       // Clean up the blob URL after a delay
       setTimeout(() => {
         URL.revokeObjectURL(blobUrl);
-      }, 5000);
+      }, 10000); // Increased delay
       
       return newTab;
     } catch (error) {
-      console.error('Error opening new tab:', error);
+      console.error('Error opening new tab with blob:', error);
       
-      // Fallback to data URL
+      // Fallback to data URL (with size limit check)
       try {
+        if (htmlContent.length > 2000000) { // ~2MB limit
+          throw new Error('HTML content too large for data URL fallback');
+        }
+        
         const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(htmlContent);
+        console.log('Using data URL fallback');
+        
         return await chrome.tabs.create({
           url: dataUrl,
           active: true
         });
       } catch (fallbackError) {
-        throw new Error('Failed to open modified HTML in new tab');
+        console.error('Data URL fallback also failed:', fallbackError);
+        throw new Error('Failed to open modified HTML in new tab. The content might be too large.');
       }
     }
   }
 
-  // Function to modify HTML offline
+  // Function to modify HTML offline - Enhanced version
   function modifyHTMLOffline(htmlString, oldWidth, newWidth, oldHeight, newHeight, enableHeight) {
     try {
       let modifiedHTML = htmlString;
-      let tableFound = false;
+      let widthModified = false;
       let heightModified = false;
       
+      console.log('Starting HTML modification...');
+      console.log('Looking for width:', oldWidth);
+      console.log('Replacing with width:', newWidth);
+      
       // Remove auto-print scripts
-      modifiedHTML = modifiedHTML.replace(/window\.print\s*\(\s*\);?/gi, '// window.print() removed');
-      modifiedHTML = modifiedHTML.replace(/(?<![a-zA-Z])print\s*\(\s*\);?/gi, '// print() removed');
+      const printScriptRemovals = [
+        /window\.print\s*\(\s*\);?/gi,
+        /(?<![a-zA-Z])print\s*\(\s*\);?/gi,
+        /setTimeout\s*\(\s*function\s*\(\s*\)\s*\{\s*window\.print\s*\(\s*\)\s*;\s*\}\s*,\s*\d+\s*\)/gi,
+        /setTimeout\s*\(\s*window\.print\s*,\s*\d+\s*\)/gi
+      ];
       
-      // Multiple approaches to find and modify the table
-      
-      // Approach 1: Look for table with specific attributes and style containing target width
-      const tablePattern1 = new RegExp(
-        `(<table[^>]*cellpadding=["']0["'][^>]*cellspacing=["']0["'][^>]*border=["']1["'][^>]*style=["'][^"]*width:\\s*${oldWidth.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^"]*["'][^>]*>)`,
-        'gi'
-      );
-      
-      modifiedHTML = modifiedHTML.replace(tablePattern1, function(match) {
-        let result = match.replace(
-          new RegExp(`width:\\s*${oldWidth.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'gi'),
-          `width: ${newWidth}`
-        );
-        
-        if (enableHeight) {
-          if (result.includes(`height: ${oldHeight}`) || result.includes(`height:${oldHeight}`)) {
-            result = result.replace(
-              new RegExp(`height:\\s*${oldHeight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'gi'),
-              `height: ${newHeight}`
-            );
-            heightModified = true;
-          } else {
-            // Add height to style
-            const styleMatch = result.match(/style=["']([^"']*)["']/i);
-            if (styleMatch) {
-              const currentStyle = styleMatch[1].trim();
-              const separator = currentStyle.endsWith(';') ? ' ' : '; ';
-              const newStyle = currentStyle + separator + `height: ${newHeight}`;
-              result = result.replace(styleMatch[0], `style="${newStyle}"`);
-              heightModified = true;
-            }
-          }
-        }
-        
-        tableFound = true;
-        return result;
+      printScriptRemovals.forEach(pattern => {
+        modifiedHTML = modifiedHTML.replace(pattern, '// auto-print removed');
       });
       
-      // Approach 2: Look for any table with the target width
-      if (!tableFound) {
-        const widthPattern = new RegExp(`width:\\s*${oldWidth.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'gi');
-        const matches = modifiedHTML.match(widthPattern);
-        if (matches) {
-          modifiedHTML = modifiedHTML.replace(widthPattern, `width: ${newWidth}`);
-          tableFound = true;
-          
-          // Try to add height if enabled
-          if (enableHeight) {
-            const heightPattern = new RegExp(`height:\\s*${oldHeight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'gi');
-            if (modifiedHTML.match(heightPattern)) {
-              modifiedHTML = modifiedHTML.replace(heightPattern, `height: ${newHeight}`);
-              heightModified = true;
-            }
-          }
-        }
+      // Enhanced width replacement - multiple strategies
+      
+      // Strategy 1: Direct width replacement in any context
+      const widthPattern = new RegExp(`width:\\s*${oldWidth.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^\\d]|$)`, 'gi');
+      const widthMatches = modifiedHTML.match(widthPattern);
+      
+      if (widthMatches) {
+        console.log('Found width matches:', widthMatches.length);
+        modifiedHTML = modifiedHTML.replace(widthPattern, `width: ${newWidth}$1`);
+        widthModified = true;
       }
       
-      // Approach 3: Look specifically in style attributes
-      if (!tableFound) {
-        const styleRegex = /style=["']([^"']*width:\s*784px[^"']*)["']/gi;
-        modifiedHTML = modifiedHTML.replace(styleRegex, function(match, styleContent) {
-          let newStyleContent = styleContent.replace(
+      // Strategy 2: Look for width attribute (not just CSS)
+      const widthAttrPattern = new RegExp(`width=["']${oldWidth.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["']`, 'gi');
+      const widthAttrMatches = modifiedHTML.match(widthAttrPattern);
+      
+      if (widthAttrMatches) {
+        console.log('Found width attribute matches:', widthAttrMatches.length);
+        modifiedHTML = modifiedHTML.replace(widthAttrPattern, `width="${newWidth}"`);
+        widthModified = true;
+      }
+      
+      // Strategy 3: Look in inline styles more broadly
+      const stylePattern = /style=["']([^"']*?)["']/gi;
+      modifiedHTML = modifiedHTML.replace(stylePattern, function(match, styleContent) {
+        if (styleContent.includes(oldWidth)) {
+          console.log('Found width in style attribute');
+          const newStyleContent = styleContent.replace(
             new RegExp(`width:\\s*${oldWidth.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'gi'),
             `width: ${newWidth}`
           );
-          
-          if (enableHeight && !newStyleContent.includes('height:')) {
-            const separator = newStyleContent.trim().endsWith(';') ? ' ' : '; ';
-            newStyleContent += separator + `height: ${newHeight}`;
-            heightModified = true;
-          }
-          
-          tableFound = true;
+          widthModified = true;
           return `style="${newStyleContent}"`;
-        });
+        }
+        return match;
+      });
+      
+      // Handle height modifications
+      if (enableHeight && oldHeight && newHeight) {
+        console.log('Looking for height:', oldHeight);
+        
+        // Height in CSS
+        const heightPattern = new RegExp(`height:\\s*${oldHeight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^\\d]|$)`, 'gi');
+        const heightMatches = modifiedHTML.match(heightPattern);
+        
+        if (heightMatches) {
+          console.log('Found height matches:', heightMatches.length);
+          modifiedHTML = modifiedHTML.replace(heightPattern, `height: ${newHeight}$1`);
+          heightModified = true;
+        }
+        
+        // Height attribute
+        const heightAttrPattern = new RegExp(`height=["']${oldHeight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["']`, 'gi');
+        const heightAttrMatches = modifiedHTML.match(heightAttrPattern);
+        
+        if (heightAttrMatches) {
+          console.log('Found height attribute matches:', heightAttrMatches.length);
+          modifiedHTML = modifiedHTML.replace(heightAttrPattern, `height="${newHeight}"`);
+          heightModified = true;
+        }
       }
       
-      if (!tableFound) {
-        return { success: false, error: `No table found with width "${oldWidth}". Check if the width value is correct.` };
+      console.log('Width modified:', widthModified);
+      console.log('Height modified:', heightModified);
+      
+      if (!widthModified) {
+        // Last resort: show what's actually in the HTML for debugging
+        const allWidths = modifiedHTML.match(/width[:\s=]["']?[^"'\s;>]+/gi) || [];
+        const uniqueWidths = [...new Set(allWidths)].slice(0, 10); // First 10 unique matches
+        
+        return { 
+          success: false, 
+          error: `Could not find and modify width "${oldWidth}". Found these width declarations: ${uniqueWidths.join(', ')}. Please check the exact width value in the page source.` 
+        };
       }
       
-      // Add CSS improvements for height control
-      if (enableHeight) {
-        const cssImprovements = `
+      // Add enhanced CSS for better table rendering
+      const enhancementCSS = `
 <style>
-/* Enhanced table height control */
+/* Extension enhancements for table modification */
+table { 
+  box-sizing: border-box !important; 
+  page-break-inside: avoid !important; 
+}
+table td, table th { 
+  box-sizing: border-box !important; 
+  word-wrap: break-word !important; 
+}
+${enableHeight ? `
+/* Height-specific enhancements */
 table[style*="height"] {
   table-layout: fixed !important;
   border-collapse: collapse !important;
 }
 table[style*="height"] td {
   vertical-align: top !important;
-  overflow: hidden;
-  box-sizing: border-box;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}` : ''}
+/* Prevent auto-print */
+@media print {
+  body { display: block !important; }
 }
-/* Proportional row heights for better scaling */
-table[style*="height"] tbody tr:nth-child(1) { height: 8% !important; }
-table[style*="height"] tbody tr:nth-child(2) { height: 12% !important; }
-table[style*="height"] tbody tr:nth-child(3) { height: 12% !important; }
-table[style*="height"] tbody tr:nth-child(4) { height: 10% !important; }
-table[style*="height"] tbody tr:nth-child(5) { height: 40% !important; }
-table[style*="height"] tbody tr:nth-child(6) { height: 8% !important; }
-table[style*="height"] tbody tr:nth-child(7) { height: 10% !important; }
 </style>`;
-        
-        if (modifiedHTML.includes('</head>')) {
-          modifiedHTML = modifiedHTML.replace('</head>', cssImprovements + '\n</head>');
-        } else if (modifiedHTML.includes('<body')) {
-          modifiedHTML = modifiedHTML.replace('<body', cssImprovements + '\n<body');
-        } else {
-          modifiedHTML = cssImprovements + '\n' + modifiedHTML;
-        }
+      
+      // Insert CSS enhancements
+      if (modifiedHTML.includes('</head>')) {
+        modifiedHTML = modifiedHTML.replace('</head>', enhancementCSS + '\n</head>');
+      } else if (modifiedHTML.includes('<body')) {
+        modifiedHTML = modifiedHTML.replace('<body', enhancementCSS + '\n<body');
+      } else {
+        modifiedHTML = enhancementCSS + '\n' + modifiedHTML;
       }
       
       return { 
         success: true, 
         html: modifiedHTML,
-        widthModified: tableFound,
+        widthModified: widthModified,
         heightModified: enableHeight ? heightModified : null
       };
       
     } catch (error) {
+      console.error('HTML modification error:', error);
       return { success: false, error: error.message };
     }
   }
