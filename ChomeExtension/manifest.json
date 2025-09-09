@@ -1,15 +1,16 @@
 {
     "manifest_version": 3,
-    "name": "HTML Copier",
-    "version": "1.0",
-    "description": "Copy the full HTML source code of any webpage",
+    "name": "HTML Table Modifier",
+    "version": "2.0",
+    "description": "Modify table dimensions and open in new tab - works even with print dialog open",
     "permissions": [
       "activeTab",
-      "scripting"
+      "scripting",
+      "tabs"
     ],
     "action": {
       "default_popup": "popup.html",
-      "default_title": "Copy HTML"
+      "default_title": "Modify Table Dimensions"
     },
     "content_scripts": [
       {
